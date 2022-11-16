@@ -1,84 +1,129 @@
 #260201037
+#for encryption:
 #python aes_cipher.py enc -m "A secret message" -p "My password" -k 32 -f enc_info.json
-
+#for decryption:
+#python aes_cipher.py dec -p "My password" -k 32 -f enc_info.json
+    
 import sys
 import json
 from Crypto.Protocol.KDF import scrypt
 from Crypto.Random import get_random_bytes
 from cryptography.hazmat.primitives import padding
-from base64 import b64encode
 from Crypto.Cipher import AES
+from base64 import b64encode
+from base64 import b64decode
 from Crypto.Util.Padding import pad
-from Crypto.Random import get_random_bytes
+from Crypto.Util.Padding import unpad
 
-def PKCS7(mes_byte):
-    """#mes_byte = "971ACD01C9C7ADEACC83257926F490FF"
-    mes_mod_16 = len(mes_byte)%16  #length of the message is divided in 2 because it is in hexadecimal notation and 2 hex becomes one byte
-    print("mod", mes_mod_16)
-    mes_remaining = int(16- mes_mod_16)
-    if(mes_remaining == 0):
-        mes_remaining = 16
-    print("remaining: ", mes_remaining)
-    
-    hex_values = [b'01', b'02', "03", "04", "05", "06", "07", "08", "09", "0A", "0B", "0C", "0D", "0E", "0F", "10"]
-    padded_mes = mes_byte + (hex_values[mes_remaining-1]*mes_remaining)
-    padded_mes = mes_byte + chr(mes_remaining)*mes_remaining
-    print("padded message", padded_mes)"""
+def pad_PKCS7(mes_byte):
     padder = padding.PKCS7(128).padder()  #128bits = 16 bytes
     padded_data = padder.update(mes_byte)
     padded_data += padder.finalize()
 
     return padded_data
-        
 
+
+def unpad_PKCS7(mes_byte):        
+    unpadder = padding.PKCS7(128).unpadder()
+    data = unpadder.update(mes_byte)
+    unpadded_data = data + unpadder.finalize()
+    return unpadded_data
 
 def encrypt():
-    if (sys.argv[1]=="enc"):
-        print("encryption")
-        if(len(sys.argv)==10):
-            if(sys.argv[2] == "-m"):
-                message = sys.argv[3] 
-            if(sys.argv[4] == "-p"):
-                password = sys.argv[5].encode() #encoding password for the scrypt algorithm
-            if(sys.argv[6] == "-k"):
-                key_len = sys.argv[7]   
-            if(sys.argv[8] == "-f"):
-                file_name = sys.argv[9]                  
-        else:
-            raise Exception("There are missing values.")   
-                
-    """       
-    salt = get_random_bytes(128) #salt should be 128 bits long as it is mentioned in the homework
-    key = scrypt(password, salt, key_len, N=2**14, r=16, p=1) 
-    """
+
+    if(len(sys.argv)==10):
+        if(sys.argv[2] == "-m"):
+            message = sys.argv[3] 
+        if(sys.argv[4] == "-p"):
+            password = sys.argv[5]
+        if(sys.argv[6] == "-k"):
+            key_len = sys.argv[7]   
+        if(sys.argv[8] == "-f"):
+            file_name = sys.argv[9]                  
+    else:
+        raise Exception("There are missing values.")   
     
     mes_encoded = message.encode()
-    password = b'my super secret'
-    salt = get_random_bytes(16)
+    print("pass before", password)
+    password = password.encode() #encoding password for the scrypt algorithm
+    salt = get_random_bytes(16) #salt should be 16bytes (128 bits) long as it is mentioned in the homework
+    print("enc salt: ", salt)
     key = scrypt(password, salt, int(key_len), N=2**14, r=16, p=1)
+    print("key enc:", key)    
     padded_mes = PKCS7(mes_encoded) 
     
     #AES WITH CBC
-
+    
     cipher = AES.new(key, AES.MODE_CBC)
     ct_bytes = cipher.encrypt(pad(padded_mes, AES.block_size))
     iv = b64encode(cipher.iv).decode('utf-8')
     ct = b64encode(ct_bytes).decode('utf-8')
-    result = json.dumps({'iv':iv, 'ciphertext':ct})
-    with open(file_name, 'w') as f:
-        f.write(result)
-        data = json.load(f)
-        print(data)
-        
-
-    print("Encryption result: ", result)
-    #'{"iv": "bWRHdzkzVDFJbWNBY0EwSmQ1UXFuQT09", "ciphertext": "VDdxQVo3TFFCbXIzcGpYa1lJbFFZQT09"}'
+    salt = b64encode(salt).decode('utf-8') #to be able to print 
+    
+    with open(file_name, 'w+') as f:
+        f.write(json.dumps({'salt': salt, 'iv':iv, 'ciphertext':ct}))
+    
+    print("Encryption result: ")
+    with open(file_name, 'r') as f:   
+        result = json.load(f)
+        print(result)    
+    
 
         
 
 def decrypt():
-    print("Decryption")
+    if(len(sys.argv)==8):
+        if(sys.argv[2] == "-p"):
+            password = sys.argv[3].encode() #encoding password for the scrypt algorithm
+        if(sys.argv[4] == "-k"):
+            key_len = sys.argv[5]   
+        if(sys.argv[6] == "-f"):
+            file_name = sys.argv[7]                  
+    else:
+        raise Exception("There are missing values.")  
+    
 
+    """  
+    with open(file_name, 'r') as f:   
+        enc_file = json.load(f)
+    
+    enc_values = list(enc_file.values())
+    salt = enc_values[0]
+    iv = enc_values[1]
+    ciphertext = enc_values[2]
+    
+    password = password.decode('utf-8')
+    salt = b64encode(salt).decode('utf-8') #salt should be 16bytes (128 bits) long as it is mentioned in the homework
+    """
+    
+    
+    """with open(file_name, 'r') as f: 
+        b64 = json.loads(f) 
+    salt = b64decode(b64['salt'])
+    key = scrypt(password, salt, int(key_len), N=2**14, r=16, p=1)
+    """
+
+    
+    #  try:
+    with open(file_name, 'r') as f: 
+        b64 = json.loads(f.read()) 
+    print("b64", b64)    
+    #b64 = json.loads(file_name) 
+    iv = b64decode(b64['iv'])
+    ct = b64decode(b64['ciphertext'])
+    salt = b64decode(b64['salt'])
+    print( "dec salt: ", salt)
+    key = scrypt(password, salt, int(key_len), N=2**14, r=16, p=1)
+    print("key dec:", key)
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    pt = unpad(cipher.decrypt(ct), AES.block_size)
+    print("The message was: ", unpad_PKCS7(pt))
+    """    
+    except (ValueError) as e:
+        print("Incorrect value ", e)
+    except (KeyError) as e:
+        print("Incorrect key ", e)
+    """
 
 
 def main():
